@@ -2,118 +2,117 @@ import pygame
 import math
 
 class CuerpoCeleste:
+    """Representa un cuerpo celeste (estrella, planeta, luna, etc.) en una simulación."""
+
     def __init__(self, x, y, radius, color, mass,
                  parent=None,
-                 orbital_radius=0, # Distance from parent
-                 orbital_angle=0,  # Initial angle in radians around parent
-                 orbital_speed=0,  # Speed in radians per update (overridden by orbital_period if provided)
-                 orbital_period_around_parent=None, # Time units for one orbit
+                 orbital_radius=0, # Distancia desde el centro del padre
+                 orbital_angle=0,  # Ángulo inicial en radianes alrededor del padre
+                 orbital_speed=0,  # Velocidad angular en radianes por actualización (anulada por orbital_period si se proporciona)
+                 orbital_period_around_parent=None, # Unidades de tiempo para una órbita completa alrededor del padre
                  ring_radius_inner=None,
                  ring_radius_outer=None,
                  ring_color=None):
 
-        # Core attributes
-        self.x = x # Absolute position for the main body, or calculated position for a moon
-        self.y = y # Absolute position for the main body, or calculated position for a moon
+        # Atributos principales
+        # Posición absoluta para el cuerpo principal (si no tiene padre), o posición inicial (si tiene padre)
+        self.x = x
+        # Posición absoluta para el cuerpo principal (si no tiene padre), o posición inicial (si tiene padre)
+        self.y = y
         self.radius = radius
         self.color = color
         self.mass = mass
 
-        # Orbital attributes (if this body orbits a parent)
-        self.parent = parent # Reference to the parent body
-        self.orbital_radius = orbital_radius # Distance from parent
-        self.orbital_angle = orbital_angle # Current angle in radians around parent
+        # Atributos orbitales (si este cuerpo orbita a un padre)
+        self.parent = parent # Referencia al cuerpo padre
+        self.orbital_radius = orbital_radius # Distancia desde el padre
+        # Ángulo actual en radianes alrededor del padre (se actualiza con el tiempo)
+        self.orbital_angle = orbital_angle
 
-        # Calculate orbital speed
-        self.orbital_speed = orbital_speed # Default or provided speed
+        # Calcular la velocidad orbital a partir del período si se proporciona, de lo contrario usar orbital_speed
+        self.orbital_speed = orbital_speed # Velocidad por defecto o proporcionada
         if orbital_period_around_parent is not None and orbital_period_around_parent != 0:
-            # Calculate speed from period: 2*pi radians / period
+            # Calcular velocidad a partir del período: 2*pi radianes / período
             self.orbital_speed = (2 * math.pi) / orbital_period_around_parent
 
-        # Ring attributes (if this body has rings)
+        # Atributos de anillos (si este cuerpo tiene anillos)
         self.ring_radius_inner = ring_radius_inner
         self.ring_radius_outer = ring_radius_outer
         self.ring_color = ring_color
-        # Determine if the body has rings based on provided radii
+        # Determinar si el cuerpo tiene anillos basándose en radios válidos proporcionados
         self.has_rings = (ring_radius_inner is not None and ring_radius_outer is not None and
-                          ring_radius_inner < ring_radius_outer) # Ensure valid radii
+                          0 <= ring_radius_inner < ring_radius_outer) # Asegurar radios válidos: interior >= 0, interior < exterior
 
-        # List to hold moons orbiting this body
+        # Lista para almacenar cuerpos que orbitan a este cuerpo (lunas, etc.)
         self.moons = []
 
+        # Si este cuerpo tiene un padre, calcular su posición inicial basándose en el padre
+        # Esto asegura que la posición inicial x, y sea correcta inmediatamente después de la creación
+        if self.parent is not None:
+             parent_x = self.parent.x
+             parent_y = self.parent.y
+             self.x = parent_x + self.orbital_radius * math.cos(self.orbital_angle)
+             self.y = parent_y + self.orbital_radius * math.sin(self.orbital_angle)
+
+
     def add_moon(self, moon):
-        """Adds a moon to this body's list of moons."""
+        """Añade un cuerpo (luna, etc.) a la lista de cuerpos que orbitan a este cuerpo."""
+        # Asegurar que el padre del cuerpo añadido sea este cuerpo
+        moon.parent = self
+        # El cuerpo añadido debería haber sido inicializado con sus parámetros orbitales
+        # relativos a su padre previsto (este cuerpo).
         self.moons.append(moon)
-        moon.parent = self # Set the parent reference on the moon
 
     def update(self):
         """
-        Updates the position of the celestial body and its moons.
-        If the body has a parent, its position is calculated relative to the parent.
-        Otherwise, its position is assumed to be absolute or handled externally.
+        Actualiza la posición del cuerpo celeste y de los cuerpos que lo orbitan (lunas).
+        Si el cuerpo tiene un padre, su posición se calcula en relación con el padre.
+        De lo contrario, su posición se asume como absoluta (ej. una estrella en el centro).
         """
         if self.parent is not None:
-            # This body is a moon orbiting a parent
-            # Calculate absolute position based on parent and orbital parameters
+            # Este cuerpo está orbitando a un padre
+            # Calcular la posición absoluta basándose en el padre y los parámetros orbitales
             parent_x = self.parent.x
             parent_y = self.parent.y
 
             self.x = parent_x + self.orbital_radius * math.cos(self.orbital_angle)
             self.y = parent_y + self.orbital_radius * math.sin(self.orbital_angle)
 
-            # Update orbital angle for the next step
+            # Actualizar el ángulo orbital para el siguiente paso
             self.orbital_angle += self.orbital_speed
-            # Keep angle within [0, 2*pi)
-            # This prevents floating point issues with large angles over time
+            # Envolver el ángulo para mantenerlo dentro de [0, 2*pi) por estabilidad numérica
             self.orbital_angle %= (2 * math.pi)
-            # Ensure positive angle if it wrapped below zero (though modulo handles positive speeds)
-            if self.orbital_angle < 0:
-                 self.orbital_angle += (2 * math.pi)
 
-
-        # Update moons orbiting this body
-        # Pass this body's current position as the parent position for the moon update
+        # Actualizar las posiciones de cualquier cuerpo que orbite a este cuerpo (lunas)
         for moon in self.moons:
-            moon.update() # Moons will use their own self.parent reference
+            moon.update()
 
-    def draw_rings(self, surface, offset_x=0, offset_y=0):
-        """Dibuja los anillos alrededor del cuerpo celeste."""
-        if self.has_rings:
-            center_x = int(self.x + offset_x)
-            center_y = int(self.y + offset_y)
-
-            # Draw rings as concentric circles
-            # A simple way is to draw the outer ring and then the inner ring in background color
-            # A better way for transparency/texture would be more complex, but this works for solid rings
-            # Draw outer ring
-            outer_rect = pygame.Rect(0, 0, self.ring_radius_outer * 2, self.ring_radius_outer * 2)
-            outer_rect.center = (center_x, center_y)
-            pygame.draw.ellipse(surface, self.ring_color, outer_rect, width=int(self.ring_radius_outer - self.ring_radius_inner))
-
-            # Alternatively, draw multiple thin ellipses for a banded look (optional)
-            # num_bands = 10
-            # band_width = (self.ring_radius_outer - self.ring_radius_inner) / num_bands
-            # for i in range(num_bands):
-            #     r = self.ring_radius_inner + i * band_width + band_width / 2
-            #     ring_rect = pygame.Rect(0, 0, r * 2, r * 2)
-            #     ring_rect.center = (center_x, center_y)
-            #     pygame.draw.ellipse(surface, self.ring_color, ring_rect, width=int(band_width))
-
-
-    def draw(self, surface, offset_x=0, offset_y=0):
+    def draw(self, surface, bg_color):
         """
-        Dibuja el cuerpo celeste, sus anillos (si los tiene) y sus lunas.
-        offset_x, offset_y se usan para desplazar la vista (cámara).
+        Dibuja el cuerpo celeste, sus anillos y los cuerpos que lo orbitan (lunas)
+        en la superficie dada.
+
+        Args:
+            surface: La superficie de pygame sobre la que dibujar.
+            bg_color: El color de fondo, usado para dibujar los anillos.
         """
-        # Draw rings first so they are behind the body
+        # Dibujar los anillos primero, si existen, para asegurar que estén detrás del cuerpo
         if self.has_rings:
-            self.draw_rings(surface, offset_x, offset_y)
+            # Dibujar el anillo exterior (círculo relleno)
+            # Asegurar que el radio sea positivo antes de dibujar
+            if self.ring_radius_outer is not None and self.ring_radius_outer > 0:
+                 pygame.draw.circle(surface, self.ring_color, (int(self.x), int(self.y)), int(self.ring_radius_outer))
+            # Dibujar la parte interior con el color de fondo para crear el efecto de anillo
+            # Asegurar que el radio sea no negativo antes de dibujar
+            if self.ring_radius_inner is not None and self.ring_radius_inner >= 0:
+                 pygame.draw.circle(surface, bg_color, (int(self.x), int(self.y)), int(self.ring_radius_inner))
 
-        # Draw the body itself
-        center_x = int(self.x + offset_x)
-        center_y = int(self.y + offset_y)
-        pygame.draw.circle(surface, self.color, (center_x, center_y), int(self.radius))
 
-        # Draw moons orbiting this body
+        # Dibujar el cuerpo principal (círculo relleno) encima de los anillos
+        # Asegurar que el radio sea positivo antes de dibujar
+        if self.radius > 0:
+            pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), int(self.radius))
+
+        # Dibujar cualquier cuerpo que orbite a este cuerpo (lunas)
         for moon in self.moons:
-            moon.draw(surface, offset_x, offset_y)
+            moon.draw(surface, bg_color) # Dibujar lunas recursivamente

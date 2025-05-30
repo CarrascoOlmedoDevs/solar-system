@@ -1,0 +1,183 @@
+import math
+
+# Define constants
+G = 6.67430e-11  # Gravitational constant
+DT = 10000       # Time step in seconds (e.g., for a simulation over days/years)
+SOFTENING_SQ = 1e6 # Softening parameter squared to prevent division by zero
+
+class CelestialBody:
+    def __init__(self, name, mass, position, velocity):
+        # Ensure position and velocity are initialized as lists/tuples of correct dimension
+        if not isinstance(position, (list, tuple)) or len(position) != 3:
+             raise ValueError("Position must be a 3-element list or tuple.")
+        if not isinstance(velocity, (list, tuple)) or len(velocity) != 3:
+             raise ValueError("Velocity must be a 3-element list or tuple.")
+
+        self.name = name
+        # Ensure mass is positive
+        if mass <= 0:
+            raise ValueError("Mass must be positive.")
+        self.mass = mass
+        # Store position and velocity as lists to allow modification
+        self.position = list(position)
+        self.velocity = list(velocity)
+        # Initialize acceleration
+        self.acceleration = [0.0, 0.0, 0.0]
+
+    def __str__(self):
+        return (f"Body(name='{self.name}', mass={self.mass:.2e}, "
+                f"pos=({self.position[0]:.2e}, {self.position[1]:.2e}, {self.position[2]:.2e}), "
+                f"vel=({self.velocity[0]:.2e}, {self.velocity[1]:.2e}, {self.velocity[2]:.2e}))")
+
+def calculate_force(body1, body2):
+    """Calculates the gravitational force of body2 on body1."""
+    # Calculate the vector from body1 to body2
+    r_vec = [body2.position[i] - body1.position[i] for i in range(3)]
+
+    # Calculate the distance squared
+    r_sq = sum(x**2 for x in r_vec)
+
+    # Add softening to prevent division by zero if bodies are at the exact same position
+    r_sq += SOFTENING_SQ
+
+    # Calculate the distance
+    r = math.sqrt(r_sq)
+
+    # Calculate the magnitude of the force
+    # F = G * m1 * m2 / r^2
+    force_magnitude = (G * body1.mass * body2.mass) / r_sq
+
+    # Calculate the force vector
+    # Force vector is along r_vec, scaled by force_magnitude / r
+    # F_vec = F * (r_vec / r)
+    force_vec = [(force_magnitude / r) * r_vec[i] for i in range(3)]
+
+    return force_vec
+
+def update_state(body, total_force, dt):
+    """Updates the velocity and position of a body based on total force and time step."""
+    # Calculate acceleration (F = ma => a = F/m)
+    # Ensure mass is not zero before division (already checked in __init__)
+    if body.mass <= 0:
+         # This case should be caught by __init__, but adding a check here for safety
+         print(f"Warning: Cannot update state for body '{body.name}' with non-positive mass.")
+         return
+
+    acceleration = [f / body.mass for f in total_force]
+
+    # Update velocity (v = v0 + a*dt)
+    body.velocity = [body.velocity[i] + acceleration[i] * dt for i in range(3)]
+
+    # Update position (p = p0 + v*dt) - using simple Euler integration
+    body.position = [body.position[i] + body.velocity[i] * dt for i in range(3)]
+
+def simulate(bodies, num_steps, dt):
+    """Runs the simulation for a given number of steps."""
+    print("Initial state:")
+    for body in bodies:
+        print(body)
+    print("-" * 20)
+
+    for step in range(num_steps):
+        # Calculate total force on each body
+        total_forces = {}
+        for body1 in bodies:
+            total_forces[body1] = [0.0, 0.0, 0.0]
+            for body2 in bodies:
+                if body1 is not body2:
+                    # Calculate force of body2 on body1
+                    force = calculate_force(body1, body2)
+                    # Sum forces
+                    total_forces[body1] = [total_forces[body1][i] + force[i] for i in range(3)]
+
+        # Update the state of each body
+        for body in bodies:
+             # Use a try-except block for potential issues during update,
+             # although the checks in __init__ and update_state should prevent most.
+             try:
+                update_state(body, total_forces[body], dt)
+             except Exception as e:
+                print(f"Error updating state for body '{body.name}': {e}")
+                # Depending on severity, you might break the loop or continue
+                # For now, just print warning and continue
+                pass # Or break
+
+        # Optional: print state periodically
+        # if (step + 1) % (num_steps // 10) == 0 or step == num_steps - 1:
+        #     print(f"Step {step + 1}:")
+        #     for body in bodies:
+        #         print(body)
+        #     print("-" * 20)
+
+    print("\nFinal state:")
+    for body in bodies:
+        print(body)
+
+# --- Example Usage ---
+if __name__ == "__main__":
+    # Create some celestial bodies (example: Sun and Earth)
+    # Using approximate real values for demonstration
+    sun_mass = 1.989e30  # kg
+    earth_mass = 5.972e24 # kg
+    # Initial positions and velocities (example: Earth orbiting Sun in XY plane)
+    # Sun at origin, Earth at (1 AU, 0, 0) with velocity (0, ~30 km/s, 0)
+    AU = 1.496e11 # meters (1 Astronomical Unit)
+    earth_orbital_speed = 29780 # m/s
+
+    try:
+        sun = CelestialBody("Sun", sun_mass, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+        earth = CelestialBody("Earth", earth_mass, (AU, 0.0, 0.0), (0.0, earth_orbital_speed, 0.0))
+        # Example of a problematic body (will raise ValueError)
+        # invalid_body = CelestialBody("Invalid", -100, (0,0,0), (0,0)) # Incorrect mass and velocity dim
+
+        system_bodies = [sun, earth] # Add invalid_body here to test error handling during creation
+
+        # Simulate for a few steps (e.g., a few days)
+        # 1 year = 365.25 * 24 * 3600 seconds
+        # Number of steps for 1 year simulation with DT=10000s: (365.25 * 24 * 3600) / 10000 ≈ 31558 steps
+        num_steps_to_simulate = 31558 # Simulate approximately 1 year
+
+        simulate(system_bodies, num_steps_to_simulate, DT)
+
+    except ValueError as ve:
+        print(f"Error creating celestial body: {ve}")
+    except Exception as e:
+        print(f"An unexpected error occurred during simulation setup or run: {e}")
+
+import math
+
+class CelestialBody:
+    def __init__(self, name, mass, position, velocity):
+        # Ensure position and velocity are initialized as lists/tuples of correct dimension
+        # Added explicit type and dimension checks
+        if not isinstance(position, (list, tuple)) or len(position) != 3:
+             raise ValueError("Position must be a 3-element list or tuple.")
+        if not isinstance(velocity, (list, tuple)) or len(velocity) != 3:
+             raise ValueError("Velocity must be a 3-element list or tuple.")
+
+        # Ensure mass is positive
+        if mass <= 0:
+            raise ValueError("Mass must be positive.")
+
+        self.name = name
+        self.mass = mass
+        # Store position and velocity as lists to allow modification later
+        self.position = list(position)
+        self.velocity = list(velocity)
+        # Acceleration is calculated in the main loop, but can be initialized here
+        self.acceleration = [0.0, 0.0, 0.0] # Initialize acceleration
+
+    def __str__(self):
+        # Improved string representation for debugging/output
+        try:
+            return (f"Body(name='{self.name}', mass={self.mass:.2e}, "
+                    f"pos=({self.position[0]:.2e}, {self.position[1]:.2e}, {self.position[2]:.2e}), "
+                    f"vel=({self.velocity[0]:.2e}, {self.velocity[1]:.2e}, {self.velocity[2]:.2e}))")
+        except (TypeError, IndexError, AttributeError) as e:
+             # Basic handling if internal state is corrupted somehow
+             return f"Body(name='{self.name}', Error displaying state: {e})"
+
+# Note: Methods for calculating force or updating state are typically placed
+# in the simulation loop in main.py as they involve interactions between bodies
+# or require the time step (dt), which is a simulation parameter, not a body property.
+# Keeping CelestialBody primarily as a data container with validation in __init__.
